@@ -78,15 +78,18 @@ This is the moat. Without it, ArchForge would be a verbose CLAUDE.md.
 
 ## The hooks
 
-Two `PreToolUse` hooks fire on every `Edit`, `Write`, `MultiEdit`:
+Three `PreToolUse` hooks fire on file-mutating tool calls:
 
-- **BuildGate** — until `state.phase >= 7`, blocks edits to source code with a "plan not finalized" message. Whitelists planning artifacts (`.archforge/`, root `*.md`, `docs/`).
-- **LoopGuard** — logs every edit, detects:
+- **BuildGate** (Edit/Write/MultiEdit/NotebookEdit) — until `state.phase >= 7`, blocks edits to source code with a "plan not finalized" message. Whitelists planning artifacts (`.archforge/`, root `*.md`, `docs/`).
+- **BashGate** (Bash) — closes the obvious bypass: blocks `>`, `>>`, `tee`, `sed -i`, `awk -i inplace`, `perl -i`, `truncate` when the target is a source path and `phase < 7`. Heuristic, not airtight (see `CHANGELOG.md` for known limitations).
+- **LoopGuard** (Edit/Write/MultiEdit/NotebookEdit) — logs every edit, detects:
   - **Counter-edits** (T1: `A → B`, then T5: `B → A`) → STOP
   - **Minimal-variation churn** (3+ edits to the same file with similar lengths within 5 min) → STOP
   - **Same-file frequency** (4+ edits in 15 min) → WARNING, not stop
 
-Hooks are written in TypeScript (`hooks/src/`) and compiled to JS (`hooks/dist/`) — no install step required for users.
+State writes are atomic (tmp+rename) with retry on EPERM/EACCES/EBUSY (Windows compatibility) and use an advisory `state.lock` for concurrent-session safety. Edit-log hashes are full SHA-256, log is rotated on every write to stay bounded.
+
+Hooks are TypeScript in `hooks/src/`, compiled to JS in `hooks/dist/` — zero install step for users.
 
 ---
 
@@ -108,11 +111,14 @@ Hooks are written in TypeScript (`hooks/src/`) and compiled to JS (`hooks/dist/`
 
 ## Honest limitations
 
-- **The "≥7 findings" gate is prompt-level + a programmatic count check.** A determined model can still pad findings to reach 7. Combined with the URL-citation requirement and banned-phrase detection, padding is harder, but not impossible. Future work: post-hoc verify that cited URLs return 200 and the cited evidence actually supports the attack.
-- **State coupling between sessions.** If two Claude Code sessions run against the same project, both can race on `state.json`. Atomic writes mitigate corruption, but logical consistency is best-effort. Run one ArchForge run per project at a time.
-- **LoopGuard's "minimal variation" detector uses length-tolerance heuristics**, not semantic similarity. It will miss semantically-identical edits that change length significantly, and may false-positive on cosmetic refactors. Tunable in `hooks/src/loopguard.ts`.
-- **No IDE integrations** — ArchForge is Claude Code only. Cursor, Windsurf, etc. don't load this plugin.
-- **The critic uses `WebSearch`/`WebFetch`** — if the network is restricted, the critic falls back to training-data-grounded findings, which the orchestrator validation step will flag as missing `evidence_url` and re-invoke. If the second invocation also lacks URLs, the critique is escalated.
+- **Cost.** The Critic is pinned to Opus 4.7 (~$5/$25 per Mtok). A typical critique cycle is ~$1-3. If you loop 2-3 times, factor that in. Future work: a `--cheap` flag to use Sonnet for the critic at lower assurance.
+- **The "≥7 findings" gate is prompt-level + programmatic JSON+heuristic checks.** A determined model can pad findings, but combined with the URL-citation requirement, exact-quote requirement (every finding's claim must contain `file.ext:lineno`), and banned-phrase detection (incl. synonym escapes), padding is hard. Not impossible. Future work: post-hoc verify cited URLs return 200.
+- **BashGate is heuristic.** Known evasions: `eval`, dynamically-built paths via env vars, `find -exec`. `rm`/`mv`/`cp` are NOT gated (too noisy). For paranoid projects, lock down further in your own settings.
+- **State coupling between sessions.** Advisory lockfile + atomic rename mitigate corruption. Logical consistency is best-effort — running two parallel ArchForge runs in the same project is unsupported.
+- **LoopGuard's "minimal variation" uses length-tolerance**, not semantic similarity. It may miss semantically-identical edits that change length significantly, and may false-positive on cosmetic refactors. Tunable in `hooks/src/loopguard.ts`.
+- **No IDE integrations** — Claude Code only. Cursor, Windsurf, etc. don't load this plugin.
+- **The critic uses `WebSearch`/`WebFetch`** — if the network is restricted, the critic falls back to training-data-grounded findings, which the validation gate will flag as missing/invalid `evidence_url` and re-invoke. After 2 invalid invocations the critique is escalated to the user.
+- **Supply-chain trust.** v0.2 ships compiled `hooks/dist/*.js` from the maintainer's machine without a signature. Until v0.3 adds GPG-signed tags + SHA256 sums, install only from the canonical repo and verify the commit SHA.
 
 ---
 

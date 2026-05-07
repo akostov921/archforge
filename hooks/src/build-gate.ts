@@ -1,41 +1,15 @@
-// BuildGate: blocks code-writing tool calls until the plan is finalized (state.phase >= 7).
-// Whitelists planning artifacts so phase skills can write to .archforge/ and root-level *.md.
+// BuildGate: blocks code-writing tool calls until state.phase >= 7.
+// Whitelists planning artifacts via shared isWhitelistedPath.
 
-import * as path from "path";
 import {
   readHookEvent,
   readState,
   emitAllow,
   emitDecision,
-  projectDir,
+  isWhitelistedPath,
 } from "./lib/state";
 
-const WHITELIST_PREFIXES = [".archforge/", "docs/"];
-const WHITELIST_FILES = new Set([
-  "BUILD_PLAN.md",
-  "BUILD_PLAN_CRITIQUE.md",
-  "FINAL_REVIEW.md",
-  "README.md",
-  "LICENSE",
-  ".gitignore",
-]);
-// Root-level *.md files (other than the whitelist above) are also allowed for planning notes.
-const ALLOW_ROOT_MARKDOWN = true;
-
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-
-function isWhitelisted(absFilePath: string): boolean {
-  const root = projectDir();
-  let rel = path.relative(root, absFilePath);
-  rel = rel.replace(/\\/g, "/");
-  if (rel.startsWith("..")) return false; // outside project — let other tools decide
-  if (WHITELIST_FILES.has(rel)) return true;
-  for (const prefix of WHITELIST_PREFIXES) {
-    if (rel.startsWith(prefix)) return true;
-  }
-  if (ALLOW_ROOT_MARKDOWN && !rel.includes("/") && rel.endsWith(".md")) return true;
-  return false;
-}
 
 function main(): void {
   const ev = readHookEvent();
@@ -55,7 +29,7 @@ function main(): void {
     emitAllow();
     return;
   }
-  if (isWhitelisted(filePath)) {
+  if (isWhitelistedPath(filePath)) {
     emitAllow();
     return;
   }
@@ -64,14 +38,18 @@ function main(): void {
     reason:
       "ArchForge BuildGate: plan not finalized (state.phase=" +
       state.phase +
-      "). Source-code edits are blocked until Phase 7. Run /archforge-status to inspect, /archforge-resume to continue planning, or finish Phase 6 user approval.",
+      "). Source-code edits are blocked until Phase 7. Run /archforge:archforge-status to inspect, /archforge:archforge-resume to continue planning, or finish Phase 6 user approval.",
   });
 }
 
 try {
   main();
 } catch (err) {
-  // On unexpected errors, fail open (allow) so we don't brick the user's session.
-  process.stderr.write("[archforge build-gate] error: " + String(err) + "\n");
+  // Fail open is intentional — we'd rather not brick the user's session.
+  // The stderr message ensures the failure is VISIBLE, not silent.
+  process.stderr.write(
+    "[archforge build-gate] ERROR (failing open, source edits NOT gated this call): " +
+      String(err) + "\n"
+  );
   emitAllow();
 }

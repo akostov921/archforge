@@ -31,31 +31,72 @@ Use the **Agent tool** with `subagent_type: critic`. Pass this prompt:
 
 The critic runs in its own forked context — it does NOT see this conversation history.
 
-### Step 3 — Parse and validate the critique
+### Step 3 — Parse and validate the critique (JSON)
 
-The critic returned its full response as a chat message. Save that **exact text** to `.archforge/.cache/last-critique.txt`, then validate programmatically:
+The critic returned its full response as a chat message. Save that **exact text** to `.archforge/.cache/last-critique.txt` via the Write tool, then validate programmatically.
+
+**Critic output is JSON, not YAML** (changed in v0.2 because LLM-emitted YAML had unquoted-colon and indentation parse failures).
 
 ```bash
-# (Save the critic's full response to disk first via Write tool.)
 node -e '
 const fs = require("fs");
-const path = process.env.CLAUDE_PROJECT_DIR + "/.archforge/.cache/last-critique.txt";
-const txt = fs.readFileSync(path, "utf8");
-const m = txt.match(/```yaml\n([\s\S]*?)\n```/);
-const body = m ? m[1] : txt;
-const findings = (body.match(/^  - id:/gm) || []).length;
-const banned = ["looks good","overall","I think","probably","seems","might","in general","for the most part","could potentially"];
+const txtPath = process.env.CLAUDE_PROJECT_DIR + "/.archforge/.cache/last-critique.txt";
+const txt = fs.readFileSync(txtPath, "utf8");
+
+// Extract fenced JSON block; fall back to whole text.
+const m = txt.match(/```json\s*\n([\s\S]*?)\n```/);
+const jsonStr = m ? m[1] : txt;
+
+let payload;
+try {
+  payload = JSON.parse(jsonStr);
+} catch (e) {
+  console.log(JSON.stringify({error: "json_parse_failed", message: String(e)}));
+  process.exit(0);
+}
+
+const findings = Array.isArray(payload.findings) ? payload.findings.length : 0;
+const evidenceCount = (payload.findings || []).filter(f => f && typeof f.evidence_url === "string" && /^https?:\/\//.test(f.evidence_url)).length;
+
+// Banned phrases — enhanced list incl. synonym escapes.
+const banned = [
+  "looks good","overall","I think","probably","seems","might",
+  "in general","for the most part","could potentially",
+  "appears to","likely","reads as"
+];
 let bannedHits = 0;
 for (const p of banned) {
   const re = new RegExp(p, "gi");
   bannedHits += (txt.match(re) || []).length;
 }
-const evidenceCount = (body.match(/evidence_url:/g) || []).length;
-console.log(JSON.stringify({findings, evidenceCount, bannedHits}));
+
+// Quality heuristics — every finding must have a concrete claim (file:line) and a URL.
+let weakFindings = 0;
+for (const f of (payload.findings || [])) {
+  const claim = (f && f.claim) || "";
+  if (!/[A-Za-z0-9_\-./]+\.(md|ts|js|py|go|rs|java|cpp|h|hpp|json):\d+/.test(claim)) {
+    weakFindings++;
+  }
+}
+
+const v = payload.verdict || {};
+console.log(JSON.stringify({
+  findings, evidenceCount, bannedHits, weakFindings,
+  recommendation: v.recommendation,
+  loop_back_reason: v.loop_back_reason
+}));
 '
 ```
 
 Use the JSON output of this command to apply the decision rules in Step 4.
+
+A critique is **valid** when:
+- `findings >= 7`
+- `evidenceCount >= findings` (every finding has a real-looking URL)
+- `bannedHits == 0`
+- `weakFindings == 0` (every finding quotes file:line)
+
+Otherwise the critique is invalid and must be regenerated.
 
 ### Step 4 — Decision rules
 

@@ -1,21 +1,21 @@
-// LoopGuard: detects edit loops (counter-edits, minimal-variation diffs, churn).
-// Logs every Edit/Write to .archforge/.cache/edits.log and stops Claude when a loop is detected.
+// LoopGuard: detects edit loops (counter-edits, minimal-variation churn,
+// same-file frequency). Logs every Edit/Write to .archforge/.cache/edits.log.
 
 import {
   readHookEvent,
   readEditLog,
   appendEditLog,
-  shortHash,
+  fullHash,
   emitAllow,
   emitDecision,
   EditLogEntry,
 } from "./lib/state";
 
-const WINDOW_MS = 15 * 60 * 1000; // 15 min total tracking window
-const MIN_VAR_WINDOW_MS = 5 * 60 * 1000; // 5 min for "minimal-variation" cluster
+const WINDOW_MS = 15 * 60 * 1000;
+const MIN_VAR_WINDOW_MS = 5 * 60 * 1000;
 const WARN_SAME_FILE = 4;
 const STOP_MIN_VAR = 3;
-const MIN_VAR_LEN_TOLERANCE = 0.15; // ±15% length difference counts as "similar"
+const MIN_VAR_LEN_TOLERANCE = 0.15;
 
 const TRACKED_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -26,7 +26,6 @@ function detectCounterEdit(
   for (const e of recent) {
     if (e.file !== current.file) continue;
     if (e.ts === current.ts) continue;
-    // Counter-edit: prior event swapped what current is now swapping back.
     if (e.old_hash === current.new_hash && e.new_hash === current.old_hash) {
       return e;
     }
@@ -44,7 +43,9 @@ function detectMinimalVariationCluster(
   );
   if (sameFile.length < STOP_MIN_VAR - 1) return [];
   const cluster = sameFile.filter((e) => {
-    const ratio = Math.abs(e.new_len - current.new_len) / Math.max(e.new_len, current.new_len, 1);
+    const ratio =
+      Math.abs(e.new_len - current.new_len) /
+      Math.max(e.new_len, current.new_len, 1);
     return ratio <= MIN_VAR_LEN_TOLERANCE;
   });
   cluster.push(current);
@@ -73,8 +74,8 @@ function buildEntry(ev: ReturnType<typeof readHookEvent>): EditLogEntry | null {
     ts: Date.now(),
     tool,
     file,
-    old_hash: shortHash(oldStr),
-    new_hash: shortHash(newStr),
+    old_hash: fullHash(oldStr),
+    new_hash: fullHash(newStr),
     new_len: newStr.length,
   };
 }
@@ -137,6 +138,9 @@ function main(): void {
 try {
   main();
 } catch (err) {
-  process.stderr.write("[archforge loopguard] error: " + String(err) + "\n");
+  process.stderr.write(
+    "[archforge loopguard] ERROR (failing open, no loop detection this call): " +
+      String(err) + "\n"
+  );
   emitAllow();
 }
