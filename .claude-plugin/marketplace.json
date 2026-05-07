@@ -14,7 +14,8 @@
       },
       "category": "workflow",
       "source": "./",
-      "homepage": "https://github.com/akostov921/archforge"
+      "homepage": "https://github.com/akostov921/archforge",
+      "version": "0.2.0"
     }
   ]
 }
