@@ -46,13 +46,13 @@ For path 3, you go through:
 | Phase | What happens | Output |
 |-------|--------------|--------|
 | **0. Requirements** | Claude asks you clarifying questions in batches until it self-rates >85% confident. No hard cap on rounds. | `requirements.md` |
-| **1. Architecture** | Generate 3-7 alternative architectures, stress-test each under scale/security/cost/edge cases, pick a winner with explicit comparison. | `architecture-options.md`, `stress-tests.md`, `decision.md` |
-| **2. Components** | Decompose into components with concrete interfaces and a DAG dependency graph. Every cross-component contract has an explicit failure mode. | `components.md` |
-| **3. Risks** | List every "I don't know how" moment. Resolve via research, prototype, or explicit deferral. Define test strategy per component. | `risks-resolved.md` |
-| **4. Build plan** | Topologically sort components. Define a tracer-bullet path. Per-step verification commands. | `build-plan.md` |
-| **5. Critique** | A **forked subagent** with zero conversation history reviews the plan. Adversarial framing. Banned phrases (`looks good`, `probably`, `seems`...). Every finding requires a real URL citation. Minimum 7 findings. If it finds BREAKS-class issues, you loop back. | `critique-vN.md` |
+| **1. Architecture** | Generate 3-7 alternative architectures, stress-test each under scale/security/cost/edge cases, pick a winner with explicit comparison. **Every comparative claim is cited with a fetched URL** — uncited claims are dropped before save. | `architecture-options.md`, `stress-tests.md`, `decision.md`, `claims-phase1.json` |
+| **2. Components** | Decompose into components with concrete interfaces and a DAG dependency graph. Every cross-component contract has an explicit failure mode. **Library capability claims are cited; pure decomposition is exempt.** | `components.md`, `claims-phase2.json` |
+| **3. Risks** | List every "I don't know how" moment. Resolve via Research (cited URL), Prototype (existing file path verified by gate), or Defer (cited fallback technique). Define test strategy per component. | `risks-resolved.md`, `claims-phase3.json` |
+| **4. Build plan** | Topologically sort components. Define a tracer-bullet path. Per-step verification commands. **Time estimates require cited basis; framework-specific test claims require URLs.** | `build-plan.md`, `claims-phase4.json` |
+| **5. Critique** | A **forked subagent** with zero conversation history reviews the plan. Adversarial framing. Banned phrases (`looks good`, `probably`, `seems`...). Every finding requires a real URL citation. Minimum 7 findings. **Cross-checks every `claims-phaseN.json` for orphan or uncited claims and treats them as BREAKS findings.** If it finds BREAKS-class issues, you loop back. | `critique-vN.md` |
 | **6. Approval** | Executive summary with top-3 critique findings. You approve, loop back, or abort. **Only mandatory user touchpoint after triage.** | `summary.md` |
-| **7. Execute** | Claude builds per the plan, one step at a time, with verification at each step. **LoopGuard hook** detects edit churn and counter-edits and stops Claude. **BuildGate** opens for source edits only at this phase. | actual code + `progress.md` |
+| **7. Execute** | Claude builds per the plan, one step at a time, with verification at each step. **LoopGuard hook** detects edit churn and counter-edits and stops Claude. **BuildGate import scanner** denies any new third-party import that has no prior row in `library-claims.md` with a fetched URL — citation hallucination is forbidden. | actual code + `progress.md` + `library-claims.md` |
 
 All artifacts live in `.archforge/` inside your project. They're plain markdown. Versioned (`requirements-v1.md`, `requirements-v2.md`...). Git-track them or `.gitignore` them — your call.
 
@@ -76,11 +76,29 @@ This is the moat. Without it, ArchForge would be a verbose CLAUDE.md.
 
 ---
 
+## Citation enforcement — the v0.3 addition
+
+The Critic alone is not enough. By v0.3, the largest remaining hallucination surface was **decisions made during planning that were never backed by verified evidence** — a Phase 1 "Postgres scales to X without sharding" claim, a Phase 2 "Drizzle supports Y" claim, a Phase 4 "Vitest has Z by default" claim. v0.3 closes that gap.
+
+**Every phase that produces factual claims** (1, 2, 3, 4, 7) emits a structured `claims-phaseN.json` next to its markdown output. Each entry is one of:
+
+- `confidence: verified` — claim backed by a URL fetched during this phase, with a `evidence_summary` quoted from the source
+- `confidence: inferred` — extrapolation from a verified source (rare; the Critic attacks these first)
+- `confidence: design_choice` — non-factual architectural decision (component cuts, naming, build order). Exempt from citation.
+
+Before each phase saves its output, a **drop-uncited gate** runs: any `verified`/`inferred` claim with empty or non-URL `evidence_url` is removed from both the JSON and the corresponding markdown sentence. **Hallucinated claims are silenced, not preserved.** The Phase 5 Critic then cross-checks for orphan markdown claims (sentences that look factual but have no JSON entry) and treats them as BREAKS-class findings.
+
+**At Phase 7**, the BuildGate hook scans every `Edit/Write/MultiEdit/NotebookEdit` for new third-party imports (TypeScript/JavaScript ES modules + CommonJS, Python `import`). Any package not already documented in `.archforge/library-claims.md` with a fetched URL is denied. To use a new symbol, Claude must first run `WebFetch` on the official docs and append a row to the library-claims table. Stdlib, relative imports, and `node:` prefixes are exempt. **Citation hallucination at the code-writing layer is structurally impossible.**
+
+See `skills/_shared/claim-schema.md` for the full schema and worked examples of which sentences are claims and which are design choices.
+
+---
+
 ## The hooks
 
 Three `PreToolUse` hooks fire on file-mutating tool calls:
 
-- **BuildGate** (Edit/Write/MultiEdit/NotebookEdit) — until `state.phase >= 7`, blocks edits to source code with a "plan not finalized" message. Whitelists planning artifacts (`.archforge/`, root `*.md`, `docs/`).
+- **BuildGate** (Edit/Write/MultiEdit/NotebookEdit) — dual-mode. Until `state.phase >= 7`, blocks edits to source code with a "plan not finalized" message; whitelists planning artifacts (`.archforge/`, root `*.md`, `docs/`). **At Phase 7**, scans the diff for third-party imports (TS/JS ES modules + CommonJS, Python `import`/`from X import`) and denies any package not documented in `.archforge/library-claims.md`. Stdlib, relative imports, and `node:` prefixes are exempt.
 - **BashGate** (Bash) — closes the obvious bypass: blocks `>`, `>>`, `tee`, `sed -i`, `awk -i inplace`, `perl -i`, `truncate` when the target is a source path and `phase < 7`. Heuristic, not airtight (see `CHANGELOG.md` for known limitations).
 - **LoopGuard** (Edit/Write/MultiEdit/NotebookEdit) — logs every edit, detects:
   - **Counter-edits** (T1: `A → B`, then T5: `B → A`) → STOP
@@ -126,8 +144,11 @@ Hooks are TypeScript in `hooks/src/`, compiled to JS in `hooks/dist/` — zero i
 
 ```
 archforge/
-├── .claude-plugin/plugin.json          # manifest
+├── .claude-plugin/
+│   ├── plugin.json                     # manifest
+│   └── marketplace.json                # one-line install metadata
 ├── skills/
+│   ├── _shared/claim-schema.md         # claim record format — referenced by all phases
 │   ├── archforge-orchestrator/SKILL.md # dispatcher + triage
 │   ├── archforge-phase-0-requirements/SKILL.md
 │   ├── archforge-phase-1-architecture/SKILL.md
@@ -145,18 +166,23 @@ archforge/
 │   └── archforge-status.md             # /archforge:status
 ├── hooks/
 │   ├── hooks.json                      # PreToolUse declarations
-│   ├── package.json                    # devDeps for build
+│   ├── package.json                    # devDeps + test scripts
 │   ├── tsconfig.json
 │   ├── src/
 │   │   ├── lib/state.ts                # shared state + I/O helpers
-│   │   ├── build-gate.ts
+│   │   ├── build-gate.ts               # phase-gate + Phase 7 import scanner
+│   │   ├── bash-gate.ts
 │   │   └── loopguard.ts
 │   ├── dist/                           # compiled JS — what hooks.json invokes
-│   └── test/sample-edit.json           # test fixture
+│   └── test/
+│       ├── sample-edit.json
+│       ├── sample-edit-with-undocumented-import.json
+│       └── run-import-scanner-test.sh  # 4-case BuildGate import-scanner test
 ├── examples/
 │   └── example-run.md                  # annotated walkthrough
 ├── README.md
 ├── LICENSE                             # MIT
+├── CHANGELOG.md
 ├── BUILD_PLAN.md                       # how this plugin was itself built
 ├── BUILD_PLAN_CRITIQUE.md              # ...and the critique of that plan
 └── FINAL_REVIEW.md                     # post-build self-audit

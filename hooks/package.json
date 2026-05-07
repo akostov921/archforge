@@ -7,7 +7,9 @@
     "build": "tsc -p .",
     "watch": "tsc -p . --watch",
     "test:loopguard": "node dist/loopguard.js < test/sample-edit.json",
-    "test:build-gate": "node dist/build-gate.js < test/sample-edit.json"
+    "test:build-gate": "node dist/build-gate.js < test/sample-edit.json",
+    "test:build-gate:imports": "bash test/run-import-scanner-test.sh",
+    "test": "npm run test:loopguard && npm run test:build-gate && npm run test:build-gate:imports"
   },
   "engines": {
     "node": ">=18.0.0"

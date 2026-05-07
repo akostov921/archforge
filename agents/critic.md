@@ -24,8 +24,21 @@ Read every file under `.archforge/` that exists. The bundle typically includes:
 - `components.md`
 - `risks-resolved.md`
 - `build-plan.md`
+- `claims-phase{1,2,3,4}.json` — structured claim records, one per planning phase
 
 If a file is missing, note it as a **finding** (severity: BREAKS — incomplete plan).
+
+### Cross-check claims files against markdown
+
+For each `claims-phaseN.json`, scan the corresponding markdown for **orphan claims** — sentences that look like factual assertions ("X scales to Y", "framework supports Z", "library handles W") but do not appear in the JSON file. Each orphan is a finding (severity: BREAKS, scenario: maintenance, attack: "uncited factual claim in plan markdown — possible hallucination, no evidence trail").
+
+For each entry in `claims-phaseN.json` with `confidence: verified` or `confidence: inferred`:
+
+- If `evidence_url` is empty → finding (severity: BREAKS).
+- If `evidence_url` is set but you cannot fetch it (404, DNS failure, paywall) → finding (severity: DEGRADES, scenario: maintenance).
+- If `evidence_url` is set and reachable but the page does not contain content matching `evidence_summary` → finding (severity: BREAKS, scenario: integration, attack: "citation does not support the claim — possible hallucinated evidence").
+
+These structural-integrity findings count toward your minimum-7 quota.
 
 ---
 

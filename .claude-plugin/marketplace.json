@@ -8,14 +8,14 @@
   "plugins": [
     {
       "name": "archforge",
-      "description": "Forces Claude through a 7-phase deliberation workflow before writing code. Adversarial Critic subagent attacks plans with cited evidence; LoopGuard hook stops cascade-failure edit loops.",
+      "description": "Forces Claude through a 7-phase deliberation workflow before writing code. Every factual claim is cited and verified — uncited claims are dropped. Adversarial Critic, LoopGuard, BuildGate import scanner.",
       "author": {
         "name": "Nemei Systems"
       },
       "category": "workflow",
       "source": "./",
       "homepage": "https://github.com/akostov921/archforge",
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   ]
 }

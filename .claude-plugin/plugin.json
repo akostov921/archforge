@@ -1,7 +1,7 @@
 {
   "name": "archforge",
-  "version": "0.2.0",
-  "description": "Forces Claude Code through a 7-phase deliberation workflow before writing code. Adversarial Critic subagent attacks plans with cited evidence; LoopGuard hook stops cascade-failure edit loops.",
+  "version": "0.3.0",
+  "description": "Forces Claude Code through a 7-phase deliberation workflow before writing code. Every factual claim is cited and verified — uncited claims are dropped. Adversarial Critic subagent attacks plans with cited evidence; LoopGuard hook stops cascade-failure edit loops; BuildGate refuses third-party imports without prior library-claims documentation.",
   "author": {
     "name": "Nemei Systems",
     "url": "https://nemei.systems"

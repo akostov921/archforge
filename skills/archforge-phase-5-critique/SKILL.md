@@ -16,12 +16,42 @@ Output: `.archforge/critique-vN.md` (next free N)
 Verify these files exist (depending on triage path):
 
 - `requirements.md` (only for `product` triage)
-- `architecture-options.md`, `decision.md` (only for `product` triage)
-- `components.md` (`product` and `feature` triage)
-- `risks-resolved.md` (`product` and `feature` triage)
-- `build-plan.md` (always)
+- `architecture-options.md`, `decision.md`, `claims-phase1.json` (only for `product` triage)
+- `components.md`, `claims-phase2.json` (`product` and `feature` triage)
+- `risks-resolved.md`, `claims-phase3.json` (`product` and `feature` triage)
+- `build-plan.md`, `claims-phase4.json` (always)
 
 If any required file is missing, **stop** and tell the user which phase to revisit.
+
+### Step 1b — Cross-check claims integrity
+
+Before invoking the critic, verify that every phase's claims file passed its own validation gate. Any non-`design_choice` claim with empty or non-URL `evidence_url` is a **structural failure** that the critic should not even see — it must be sent back to the originating phase.
+
+```bash
+node -e '
+const fs = require("fs"), path = require("path");
+const dir = process.env.CLAUDE_PROJECT_DIR + "/.archforge";
+const phases = [1,2,3,4];
+const violations = [];
+for (const n of phases) {
+  const f = path.join(dir, "claims-phase" + n + ".json");
+  if (!fs.existsSync(f)) { violations.push({phase:n, error:"missing_claims_file"}); continue; }
+  let d; try { d = JSON.parse(fs.readFileSync(f,"utf8")); } catch (e) { violations.push({phase:n, error:"unparseable", detail:String(e)}); continue; }
+  for (const c of (d.claims || [])) {
+    if (c.confidence === "design_choice") continue;
+    const url = c.evidence_url || "";
+    const okHttp = /^https?:\/\/[^\s<>]+\.[a-z]{2,}/i.test(url);
+    const okFile = url.startsWith("file://");
+    if (!okHttp && !okFile) {
+      violations.push({phase:n, id:c.id, reason:"uncited_claim_in_saved_file", claim:c.claim});
+    }
+  }
+}
+console.log(JSON.stringify({violations, count: violations.length}));
+'
+```
+
+If `count > 0`, **do not invoke the critic**. Instead, tell the user which phase has uncited claims and route them back to that phase. The critic only runs against bundles that pass the structural integrity check.
 
 ### Step 2 — Invoke the critic subagent
 

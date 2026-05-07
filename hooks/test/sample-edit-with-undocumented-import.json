@@ -1,0 +1,1 @@
+{"session_id":"test","cwd":"/tmp","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/tmp/billing.ts","content":"import Stripe from 'stripe'\nimport fs from 'fs'\nconst s = new Stripe(process.env.SK!)\nexport async function chargeAll(){ /* ... */ }\n"},"tool_use_id":"t1"}
