@@ -1,0 +1,1 @@
+{"session_id":"test","cwd":"/tmp","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/foo.ts","old_string":"const a=1","new_string":"const a=2","replace_all":false},"tool_use_id":"t1"}

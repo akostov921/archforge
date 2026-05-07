@@ -1,0 +1,14 @@
+node_modules/
+*.log
+.DS_Store
+
+# Test artifacts
+.archforge/
+hooks/.cache/
+
+# Editor
+.vscode/
+.idea/
+
+# Allow compiled hook output to be committed
+!hooks/dist/

@@ -1,0 +1,19 @@
+{
+  "name": "archforge-hooks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ArchForge plugin hooks (LoopGuard + BuildGate). Compiled JS lives in dist/ and is what hooks.json invokes.",
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test:loopguard": "node dist/loopguard.js < test/sample-edit.json",
+    "test:build-gate": "node dist/build-gate.js < test/sample-edit.json"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

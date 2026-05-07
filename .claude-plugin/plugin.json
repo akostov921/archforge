@@ -1,0 +1,12 @@
+{
+  "name": "archforge",
+  "version": "0.1.0",
+  "description": "Forces Claude Code through a 7-phase deliberation workflow before writing code. Adversarial Critic subagent attacks plans with cited evidence; LoopGuard hook stops cascade-failure edit loops.",
+  "author": {
+    "name": "Nemei Systems",
+    "url": "https://nemei.systems"
+  },
+  "homepage": "https://github.com/akostov921/archforge",
+  "repository": "https://github.com/akostov921/archforge",
+  "license": "MIT"
+}
