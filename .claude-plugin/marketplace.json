@@ -1,0 +1,20 @@
+{
+  "name": "archforge",
+  "description": "Single-plugin marketplace for ArchForge — the 7-phase deliberation plugin for Claude Code.",
+  "owner": {
+    "name": "Nemei Systems",
+    "url": "https://nemei.systems"
+  },
+  "plugins": [
+    {
+      "name": "archforge",
+      "description": "Forces Claude through a 7-phase deliberation workflow before writing code. Adversarial Critic subagent attacks plans with cited evidence; LoopGuard hook stops cascade-failure edit loops.",
+      "author": {
+        "name": "Nemei Systems"
+      },
+      "category": "workflow",
+      "source": ".",
+      "homepage": "https://github.com/akostov921/archforge"
+    }
+  ]
+}
