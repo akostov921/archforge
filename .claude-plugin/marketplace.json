@@ -13,7 +13,7 @@
         "name": "Nemei Systems"
       },
       "category": "workflow",
-      "source": ".",
+      "source": "./",
       "homepage": "https://github.com/akostov921/archforge"
     }
   ]
