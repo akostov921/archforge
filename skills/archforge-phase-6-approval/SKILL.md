@@ -1,13 +1,13 @@
 ---
-description: Phase 6 — User final approval. Generate executive summary from all phase outputs and request explicit user approval. The only mandatory user touchpoint after triage.
+description: Phase 6 — Auto-approval. Write executive summary, auto-advance to Phase 7. No user questions. Fully autonomous.
 ---
 
-# Phase 6 — User Final Approval
+# Phase 6 — Auto-Approval (Autonomous)
 
-Goal: give the user a single screen of signal so they can decide GO / NO-GO.
+Goal: write the executive summary, auto-advance to Phase 7, begin execution immediately. **Do not ask the user anything.**
 
 Input: every `.archforge/*.md`
-Output: `.archforge/summary.md` + a user prompt
+Output: `.archforge/summary.md` + immediate Phase 7 handoff
 
 ## Process
 
@@ -16,76 +16,37 @@ Output: `.archforge/summary.md` + a user prompt
 Write `.archforge/summary.md`:
 
 ```markdown
-# ArchForge — Plan Summary for Approval
+# ArchForge — Plan Summary
 
 **Goal:** <one sentence from requirements.md>
-
 **Triage path:** <quick | feature | product>
-
 **Critique cycles:** <state.critique_cycles>
+**Auto-approved at:** <ISO timestamp>
 
 ---
 
-## Architecture (one paragraph)
-<distilled from decision.md — what was chosen and why, in 3-5 sentences>
+## Architecture
+<distilled from decision.md — what was chosen and why, 3-5 sentences, every claim cited with URL>
 
-## Components (table)
+## Components
 | Component | Responsibility | Owns |
 |-----------|----------------|------|
 | ... | ... | ... |
 
-## Critical risks the plan accepts
-<from risks-resolved.md — list deferred unknowns and their fallback plans>
+## Risks accepted
+<from risks-resolved.md — deferred unknowns and fallback plans>
 
-## Critic verdict (most recent)
-- Total findings: N
-- Breaks: X | Degrades: Y | Risky: Z
+## Critic verdict
+- Total findings: N | Breaks: X | Degrades: Y | Risky: Z
 - Recommendation: <PROCEED | ...>
 
-### Top 3 findings (from critique-v<latest>.md)
-1. **[severity]** <claim quote> — <attack> [evidence]
-2. ...
-3. ...
-
-## Build steps (count + tracer bullet)
+## Build steps
 - N total steps. Tracer bullet: <one line from build-plan.md>
-
-## Files Claude will create/modify (estimate)
-- <count> source files under <paths>
-- <count> test files under <paths>
-
----
-
-## Linked artifacts (full detail)
-- [Requirements](./requirements.md)
-- [Architecture decision](./decision.md)
-- [Components](./components.md)
-- [Risks resolved](./risks-resolved.md)
-- [Build plan](./build-plan.md)
-- [Latest critique](./critique-v<N>.md)
 ```
 
-### Step 2 — Present to user
+### Step 2 — Auto-advance to Phase 7
 
-Show the user the summary content directly in the chat (do not just point them to the file). Then ask:
-
-> ArchForge is ready to enter Phase 7 (execute). Three options:
->
-> **A. Approve** — start building per the plan.
-> **B. Loop back** — name a phase to revisit (0–4) and tell me what to change.
-> **C. Abort** — exit ArchForge and proceed manually.
->
-> Which?
-
-Use the AskUserQuestion tool if available.
-
-### Step 3 — Act on the answer
-
-- **A. Approve** → advance state to phase 7. Hand off to `archforge-phase-7-execute`.
-- **B. Loop back** → set state.phase to the chosen phase, increment `critique_cycles`, hand off to that phase's skill.
-- **C. Abort** → write `.archforge/aborted.md` with the user's reason; do not delete other artifacts. Tell the user `.archforge/` can be safely removed when they're ready.
-
-### Step 4 — On approval, advance state
+Run immediately without pausing:
 
 ```bash
 node -e '
@@ -97,10 +58,20 @@ fs.renameSync(p+".tmp",p);
 '
 ```
 
-This is the moment the BuildGate hook flips from "block source edits" to "allow source edits". Tell the user explicitly: "BuildGate is now open. Source-code edits are no longer blocked."
+### Step 3 — Notify and hand off
+
+Post a single summary message to the user (no question, no options):
+
+> ✅ **ArchForge — Plan approved autonomously. Entering Phase 7.**
+> Goal: <one sentence>
+> Steps: N | Risks accepted: X | Critique cycles: N
+> Building now...
+
+Then immediately invoke `archforge-phase-7-execute`.
 
 ## Hard rules
 
-- This is the **only** mandatory user touchpoint between triage (Phase 0 entry) and execution. Do not skip.
-- The summary must include the top 3 critique findings even on PROCEED — the user should know what risks they're accepting.
-- Do not advance to phase 7 without an explicit "approve" answer.
+- **Never ask the user for approval.** Auto-advance always.
+- **Never use AskUserQuestion tool in this phase.**
+- If critique found BREAKS-class issues that were NOT resolved → note them in summary.md as accepted risks, still auto-advance.
+- The summary must be written before advancing state.

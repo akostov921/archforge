@@ -48,6 +48,17 @@ Write `.archforge/stress-tests.md`. For each option, run it through these scenar
 
 For each (option, scenario) pair, write 1-3 sentences. Be specific about the failure mode.
 
+### Step 2b — Mandatory WebSearch for every design comparison
+
+Before writing `decision.md`, for every "Option A vs Option B" comparison:
+
+1. **WebSearch:** `"<tech A> vs <tech B> production 2024"` — find postmortems, benchmarks, GitHub issues
+2. **WebSearch:** `"<tech A> problems at scale"` and `"<tech B> problems at scale"`  
+3. **WebFetch** the top 2-3 results for each
+4. If a claim can be verified with a 10-line prototype → write it in `.archforge/prototypes/verify-<claim-id>.ts` and run it with `npx tsx`
+
+Every comparison bullet in `decision.md` must trace back to a fetched URL or prototype result. Training-data recall alone is **forbidden** for comparative claims.
+
 ### Step 3 — Decide
 
 Write `.archforge/decision.md`:

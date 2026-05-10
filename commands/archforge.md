@@ -8,8 +8,11 @@ Goal from the user: $ARGUMENTS
 
 Use the `archforge-orchestrator` skill from this plugin to triage and dispatch.
 
-If `$ARGUMENTS` is empty, ask the user once: "What are you trying to build?" Then continue.
+**Triage is fully autonomous** — no questions asked. The orchestrator infers the right path from the goal wording:
+- `audit <path>` → full codebase audit with cited findings + prototype verification
+- `fix` → auto-fix CONFIRMED issues from the last audit
+- anything else → build (auto-detects quick / feature / product)
 
-If a previous run is in progress (`.archforge/state.json` exists with `phase >= 0`), do **not** start a new run — tell the user to use `/archforge:resume` or `/archforge:status`, or to remove `.archforge/` to start fresh.
+If `$ARGUMENTS` is empty, ask the user once: "What are you trying to build or audit?" Then continue.
 
-Do not skip the triage step. Do not silently pick a path. The triage layer is what prevents ArchForge from being overkill for trivial tasks.
+If a previous run is in progress (`.archforge/state.json` exists with `phase >= 0`), do **not** start a new run — tell the user to use `/archforge:archforge-resume` or `/archforge:archforge-status`, or to remove `.archforge/` to start fresh.

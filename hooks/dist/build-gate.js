@@ -1,10 +1,10 @@
 "use strict";
 // BuildGate: two responsibilities, gated by state.phase.
 //   1. Before phase 7: block all source-code edits (only planning artifacts pass).
-//   2. At phase 7: scan new third-party imports in the diff. Any package not
-//      already documented in .archforge/library-claims.md is denied — the
-//      execute skill must record an evidence URL before the symbol can be used.
-// Citation hallucination is the failure mode this prevents.
+//   2. At phase 7: scan new third-party imports. Any undocumented package triggers
+//      an instruction to Claude to self-document via WebFetch, then retry — never
+//      blocks the user. Anti-hallucination is enforced by requiring a real fetched
+//      URL before the symbol can be used, but execution is never fully stopped.
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -43,13 +43,10 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const state_1 = require("./lib/state");
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-// Code extensions where import scanning runs. Other files (markdown, config
-// JSON, etc.) skip the scan.
 const SCANNED_EXTENSIONS = new Set([
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
     ".py",
 ]);
-// Node.js / Python / Deno standard libraries — never require library-claims entry.
 const NODE_BUILTINS = new Set([
     "fs", "path", "os", "crypto", "http", "https", "url", "util", "stream",
     "events", "buffer", "child_process", "process", "querystring", "zlib",
@@ -68,8 +65,12 @@ const PY_STDLIB = new Set([
     "copy", "pickle", "struct", "array", "binascii", "zlib", "gzip",
     "tarfile", "zipfile", "platform", "traceback", "inspect",
 ]);
+// Path aliases (tsconfig paths like @/) are project-internal — not third-party.
+const PATH_ALIAS_PREFIXES = ["@/", "~/"];
+function isPathAlias(spec) {
+    return PATH_ALIAS_PREFIXES.some((p) => spec.startsWith(p));
+}
 function packageRoot(spec) {
-    // Strip subpath imports: "stripe/lib/foo" → "stripe", "@scope/pkg/sub" → "@scope/pkg".
     if (spec.startsWith("@")) {
         const parts = spec.split("/");
         return parts.length >= 2 ? parts[0] + "/" + parts[1] : spec;
@@ -78,7 +79,6 @@ function packageRoot(spec) {
 }
 function extractImports(content) {
     const found = new Set();
-    // ES modules: import X from 'pkg' / import 'pkg' / import * as X from "pkg"
     const esmRe = /\bimport\s+(?:[\w*{},\s]+?\s+from\s+)?['"]([^'"]+)['"]/g;
     let m;
     while ((m = esmRe.exec(content)) !== null) {
@@ -87,9 +87,10 @@ function extractImports(content) {
             continue;
         if (spec.startsWith("node:"))
             continue;
+        if (isPathAlias(spec))
+            continue;
         found.add(packageRoot(spec));
     }
-    // CommonJS: require('pkg')
     const cjsRe = /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
     while ((m = cjsRe.exec(content)) !== null) {
         const spec = m[1];
@@ -97,9 +98,10 @@ function extractImports(content) {
             continue;
         if (spec.startsWith("node:"))
             continue;
+        if (isPathAlias(spec))
+            continue;
         found.add(packageRoot(spec));
     }
-    // Python: from pkg import X / import pkg
     const pyFromRe = /^\s*from\s+([\w.]+)\s+import\b/gm;
     while ((m = pyFromRe.exec(content)) !== null) {
         const spec = m[1];
@@ -131,8 +133,6 @@ function readLibraryClaims() {
     catch {
         return documented;
     }
-    // Match table rows: "| package | symbol | https://... | summary | ts |"
-    // Accept either pipe-table or fenced code; extract first cell that looks like a package.
     const rowRe = /^\s*\|\s*([@\w][\w@/-]*)\s*\|/gm;
     let m;
     while ((m = rowRe.exec(raw)) !== null) {
@@ -148,17 +148,13 @@ function contentFromInput(tool, input) {
         case "Write":
             return input.content || "";
         case "Edit": {
-            const oldS = input.old_string || "";
             const newS = input.new_string || "";
-            // Conservative: scan both old_string and new_string. If either references
-            // a new import, we want to know — though typically only new_string matters.
+            const oldS = input.old_string || "";
             return newS + "\n" + oldS;
         }
         case "MultiEdit": {
             const edits = input.edits || [];
-            return edits
-                .map((e) => (e.new_string || "") + "\n" + (e.old_string || ""))
-                .join("\n");
+            return edits.map((e) => (e.new_string || "") + "\n" + (e.old_string || "")).join("\n");
         }
         case "NotebookEdit":
             return input.new_source || "";
@@ -180,7 +176,7 @@ function main() {
         return;
     }
     const state = (0, state_1.readState)();
-    // ---- Pre-Phase 7: block all source edits, allow planning artifacts ----
+    // ---- Pre-Phase 7: block source edits, allow planning artifacts ----
     if (state.phase < 7) {
         if ((0, state_1.isWhitelistedPath)(filePath)) {
             (0, state_1.emitAllow)();
@@ -190,11 +186,12 @@ function main() {
             permissionDecision: "deny",
             reason: "ArchForge BuildGate: plan not finalized (state.phase=" +
                 state.phase +
-                "). Source-code edits are blocked until Phase 7. Run /archforge:archforge-status to inspect, /archforge:archforge-resume to continue planning, or finish Phase 6 user approval.",
+                "). Source-code edits are blocked until Phase 7. " +
+                "Run /archforge:archforge-resume to continue planning.",
         });
         return;
     }
-    // ---- Phase 7: import scanner ----
+    // ---- Phase 7: import scanner — instruct self-documentation, never hard-block ----
     const ext = path.extname(filePath).toLowerCase();
     if (!SCANNED_EXTENSIONS.has(ext)) {
         (0, state_1.emitAllow)();
@@ -216,20 +213,25 @@ function main() {
         (0, state_1.emitAllow)();
         return;
     }
+    // Instead of hard-blocking, instruct Claude to self-document autonomously:
+    // 1. Run WebFetch on each package's official docs
+    // 2. Append a row to library-claims.md
+    // 3. Retry the edit
+    // This keeps the anti-hallucination guarantee without requiring user intervention.
     (0, state_1.emitDecision)({
         permissionDecision: "deny",
-        reason: "ArchForge BuildGate (Phase 7): import of undocumented third-party package(s): " +
+        reason: "ArchForge BuildGate (Phase 7): undocumented package(s): " +
             undocumented.join(", ") +
-            ". Before using any third-party API, run WebFetch on the official docs and append a row to .archforge/library-claims.md with the package name, the specific symbol used, the fetched URL, and a 1-sentence summary. Then retry the edit. This prevents hallucinated API usage.",
+            ". AUTONOMOUS ACTION REQUIRED (no user input needed): " +
+            "For each package, run WebFetch on its official docs page, then append a row to " +
+            ".archforge/library-claims.md with: package name, symbols used, fetched URL, 1-sentence summary, timestamp. " +
+            "Then retry this edit immediately. Do not ask the user. Self-document and continue.",
     });
 }
 try {
     main();
 }
 catch (err) {
-    // Fail open is intentional — we'd rather not brick the user's session.
-    // The stderr message ensures the failure is VISIBLE, not silent.
-    process.stderr.write("[archforge build-gate] ERROR (failing open, source edits NOT gated this call): " +
-        String(err) + "\n");
+    process.stderr.write("[archforge build-gate] ERROR (failing open): " + String(err) + "\n");
     (0, state_1.emitAllow)();
 }

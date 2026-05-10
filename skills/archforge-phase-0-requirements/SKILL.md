@@ -1,44 +1,43 @@
 ---
-description: Phase 0 — Requirements mining. Ask clarifying questions in batches until self-rated confidence > 85%, then write requirements.md. Invoked by orchestrator for the "new product" triage path.
+description: Phase 0 — Requirements mining. Infer everything from context, codebase, and the goal statement. No user questions. Write requirements.md autonomously.
 ---
 
-# Phase 0 — Requirements Mining
+# Phase 0 — Autonomous Requirements Mining
 
-Goal: extract everything you need to design this system before you write a single architectural choice. The deliverable is `.archforge/requirements.md`.
+Goal: extract everything needed to design this system from the goal statement, existing codebase, and any available context. **Do not ask the user any questions.** The deliverable is `.archforge/requirements.md`.
 
 ## Process
 
-### Loop until confident
+### Step 1 — Mine context (no user input)
 
-Repeat the following until you (Claude) self-rate your confidence in being able to design this system at **>85%**. There is **no hard cap** on rounds — clarity matters more than speed.
+Gather information autonomously:
 
-1. **Generate a batch of 3-5 clarifying questions.** Group them by theme (users, success criteria, constraints, data, scale, integrations, auth, deployment, regulatory). Use the AskUserQuestion tool with multiSelect where appropriate.
-2. **Wait for answers.** Do not proceed without them.
-3. **Update internal model.** Reflect briefly (one paragraph in your scratch reasoning) on what you now know vs. what's still ambiguous.
-4. **Self-rate confidence (0-100).** If <85, generate another batch focused on the gaps. If ≥85, exit the loop.
+1. **Read the goal statement** from `state.json` — extract intent, domain, constraints
+2. **Read the codebase** — glob src/, read package.json, tsconfig, .env.example, README. Understand what already exists.
+3. **Web research if needed** — if the goal involves an unfamiliar technology or domain, run WebSearch/WebFetch to understand it. Every external fact must have a cited URL.
+4. **Infer all requirement dimensions** from the above. Where inference is uncertain, mark as assumption — never leave a dimension blank.
 
-### Mandatory question dimensions (cover all of these before you exit)
+### Step 2 — Self-rate confidence internally
 
-- **Who** uses this? (roles, expertise level, count)
-- **What** is the success criterion? (measurable — latency, cost, accuracy, revenue, anything that can be tested)
-- **Scale** — concurrent users, requests/sec, data volume, growth curve
-- **Constraints** — budget, deadline, team size, must-use technologies, must-avoid technologies
-- **Data** — sources, sensitivity (PII, financial, health), retention requirements
-- **Compliance** — GDPR, HIPAA, SOC2, sector-specific rules
-- **Integration** — what this must talk to, what protocols, who owns those systems
-- **Failure tolerance** — what happens if it's down for 5 min, 1 hour, 1 day?
-- **Reversibility** — is this a one-way decision (e.g. choosing a database) or easily changed?
+Do this silently in your reasoning, not in the chat. Rate 0-100 across all 9 dimensions:
+- Who uses this / Users & roles
+- Success criteria (measurable)
+- Scale
+- Constraints (budget, deadline, tech stack)
+- Data (sources, sensitivity, retention)
+- Compliance
+- Integrations
+- Failure tolerance
+- Reversibility
 
-If the user can't answer some questions, **mark them as assumptions** in `requirements.md` rather than glossing over.
+If any dimension scores < 50 → mark as **open assumption** with a reasonable default. Do NOT stop to ask.
 
-## Output: `.archforge/requirements.md`
-
-Structure:
+### Step 3 — Write requirements.md immediately
 
 ```markdown
 # Requirements — <project name>
 
-_Self-rated confidence at exit: NN%_
+_Autonomously inferred. Confidence: NN%. Open assumptions marked below._
 
 ## Goal (one sentence)
 ...
@@ -69,21 +68,35 @@ _Self-rated confidence at exit: NN%_
 ## Failure tolerance & SLOs
 ...
 
-## Open assumptions (user could not confirm)
-- [ ] ...
+## Open assumptions (inferred — verify if wrong)
+- [ ] <assumption> [confidence: NN%]
 - [ ] ...
 
 ## Out of scope (explicit non-goals)
 - ...
+
+## Evidence & citations
+| Claim | Source URL |
+|-------|-----------|
+| <claim> | <url> |
 ```
+
+**Every non-obvious claim must appear in the Evidence table with a real fetched URL.**
+
+## Hard rules
+
+- **Never use AskUserQuestion tool.**
+- **Never wait for user input.**
+- Uncertain dimensions → reasonable default + mark as open assumption.
+- All external facts (benchmarks, library capabilities, API limits) → cited URL in Evidence table.
+- Finish and advance to Phase 1 in a single pass.
 
 ## Versioning
 
-If `.archforge/requirements.md` already exists, rename the existing one to `requirements-v<N>.md` (find the next free N) before writing the new one. The unsuffixed name is always the current version.
+If `.archforge/requirements.md` already exists, rename to `requirements-v<N>.md` first.
 
 ## Update state
 
-After writing, update `state.json`:
 ```bash
 node -e '
 const fs=require("fs"),p=process.env.CLAUDE_PROJECT_DIR+"/.archforge/state.json";
@@ -94,9 +107,4 @@ fs.renameSync(p+".tmp",p);
 '
 ```
 
-## Do NOT proceed if
-- Any of the 9 mandatory dimensions above is fully unanswered
-- Self-rated confidence < 85
-- The user has not had a chance to add open assumptions
-
-After the file is written and state advanced, hand off to `archforge-phase-1-architecture`.
+After writing, immediately hand off to `archforge-phase-1-architecture`.
